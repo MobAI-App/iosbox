@@ -1,0 +1,16 @@
+#!/bin/bash
+TOOL=""
+for p in /usr/lib/llvm-*/bin/llvm-install-name-tool /usr/local/bin/llvm-install-name-tool; do
+  [ -x "$p" ] && TOOL="$p" && break
+done
+
+if [ -z "$TOOL" ]; then
+  TOOL=$(which llvm-install-name-tool 2>/dev/null)
+fi
+
+if [ -z "$TOOL" ]; then
+  echo "error: llvm-install-name-tool not found" >&2
+  exit 1
+fi
+
+exec "$TOOL" "$@"

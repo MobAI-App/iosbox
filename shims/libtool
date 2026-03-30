@@ -1,0 +1,17 @@
+#!/bin/bash
+args=()
+static=false
+output=''
+skip_next=false
+for arg in "$@"; do
+  if $skip_next; then output="$arg"; skip_next=false; continue; fi
+  case "$arg" in
+    -static) static=true ;;
+    -o) skip_next=true ;;
+    *) args+=("$arg") ;;
+  esac
+done
+if $static && [ -n "$output" ]; then
+  exec llvm-ar rcs "$output" "${args[@]}"
+fi
+exec libtool.real "$@" 2>/dev/null || exit 1

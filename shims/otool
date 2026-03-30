@@ -1,0 +1,19 @@
+#!/bin/bash
+# Shim for otool — delegates to llvm-otool which is a drop-in replacement.
+# Needed by Dart native asset hooks that inspect built dylibs.
+
+OTOOL=""
+for p in /usr/lib/llvm-*/bin/llvm-otool /usr/local/bin/llvm-otool; do
+  [ -x "$p" ] && OTOOL="$p" && break
+done
+
+if [ -z "$OTOOL" ]; then
+  OTOOL=$(which llvm-otool 2>/dev/null)
+fi
+
+if [ -z "$OTOOL" ]; then
+  echo "error: llvm-otool not found" >&2
+  exit 1
+fi
+
+exec "$OTOOL" "$@"

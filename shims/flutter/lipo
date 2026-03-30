@@ -1,0 +1,9 @@
+#!/bin/bash
+input='' output='' prev=''
+for arg in "$@"; do
+  [[ "$prev" == '-output' ]] && output="$arg"
+  [[ "$arg" != -* && -f "$arg" ]] && input="$arg"
+  prev="$arg"
+done
+[[ -n "$input" && -n "$output" ]] && cp "$input" "$output"
+exit 0

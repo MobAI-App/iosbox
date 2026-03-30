@@ -1,0 +1,56 @@
+#!/bin/bash
+args=()
+skip_next=false
+find_next=false
+is_clang=false
+has_arch=false
+
+for arg in "$@"; do
+  if $skip_next; then skip_next=false; continue; fi
+  if $find_next; then which "$arg" 2>/dev/null || echo "/usr/bin/$arg"; exit 0; fi
+  case "$arg" in
+    --sdk) skip_next=true; continue ;;
+    --show-sdk-path)
+      SDKS_DIR="$HOME/.iosbox/sdk/darwin.artifactbundle/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs"
+      # Find the versioned SDK directory (e.g. iPhoneOS26.2.sdk), fall back to the symlink
+      for d in "$SDKS_DIR"/iPhoneOS[0-9]*.sdk; do
+        [ -d "$d" ] && echo "$d" && exit 0
+      done
+      echo "$SDKS_DIR/iPhoneOS.sdk"
+      exit 0
+      ;;
+    --find) find_next=true; continue ;;
+    --) continue ;;
+    clang) is_clang=true; args+=('clang'); continue ;;
+    clang++) is_clang=true; args+=('clang++'); continue ;;
+    -arch) skip_next=true; has_arch=true; continue ;;
+  esac
+  args+=("$arg")
+done
+
+if $is_clang && $has_arch; then
+  new_args=()
+  for arg in "${args[@]}"; do
+    case "$arg" in
+      -dynamiclib) new_args+=('-shared'); continue ;;
+      -miphoneos-version-min=*) continue ;;
+      *) new_args+=("$arg") ;;
+    esac
+  done
+
+  # Find ld64.lld
+  LLD=""
+  for p in "$HOME/.iosbox/sdk/darwin.artifactbundle/toolset/bin/ld64.lld" "$HOME/.iosbox/toolset/bin/ld64.lld" /usr/lib/llvm-*/bin/ld64.lld /usr/local/bin/ld64.lld; do
+    [ -x "$p" ] && LLD="$p" && break
+  done
+  [ -z "$LLD" ] && echo "error: ld64.lld not found" >&2 && exit 1
+
+  exec "${new_args[0]}" \
+    --target=arm64-apple-ios13.0 \
+    -fuse-ld="$LLD" \
+    -nostdlib \
+    -Wl,-platform_version,ios,13.0.0,16.0.0 \
+    "${new_args[@]:1}"
+fi
+
+exec "${args[@]}"

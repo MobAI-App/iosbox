@@ -1,0 +1,18 @@
+# Build output
+*.ipa
+
+# Extracted SDK and toolset (produced by `iosbox setup`)
+.sdk/
+.sdk-tools/
+
+# Go
+*.exe
+*.test
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
+*.xip
+
+.claude

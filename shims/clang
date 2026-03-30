@@ -1,0 +1,43 @@
+#!/bin/bash
+# Shim that intercepts clang calls targeting arm64-apple-ios and uses ld64.lld.
+# Needed because Dart native asset hooks call clang directly (not via xcrun).
+
+is_ios=false
+is_link=false
+
+for arg in "$@"; do
+  case "$arg" in
+    -target) is_ios=maybe ;;
+    arm64-apple-ios*) [ "$is_ios" = "maybe" ] && is_ios=true ;;
+    -shared|-dynamiclib) is_link=true ;;
+    *) [ "$is_ios" = "maybe" ] && is_ios=false ;;
+  esac
+done
+
+if $is_link && [ "$is_ios" = "true" ]; then
+  # Find ld64.lld
+  LLD=""
+  for p in "$HOME/.iosbox/sdk/darwin.artifactbundle/toolset/bin/ld64.lld" "$HOME/.iosbox/toolset/bin/ld64.lld" /usr/lib/llvm-*/bin/ld64.lld /usr/local/bin/ld64.lld; do
+    [ -x "$p" ] && LLD="$p" && break
+  done
+  [ -z "$LLD" ] && echo "error: ld64.lld not found" >&2 && exit 1
+
+  # Filter out flags incompatible with ld64.lld and add required ones
+  args=()
+  for arg in "$@"; do
+    case "$arg" in
+      -mios-version-min=*) continue ;;
+      -Wl,-encryptable) continue ;;
+      *) args+=("$arg") ;;
+    esac
+  done
+
+  exec /usr/bin/clang \
+    -fuse-ld="$LLD" \
+    -Wl,-platform_version,ios,13.0.0,16.0.0 \
+    -Wl,-adhoc_codesign \
+    -Wl,-headerpad_max_install_names \
+    "${args[@]}"
+fi
+
+exec /usr/bin/clang "$@"
