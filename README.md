@@ -101,6 +101,10 @@ shims/
   clang             Intercepts clang calls targeting arm64-apple-ios
 ```
 
+## Swift Package Manager
+
+iosbox uses [Swift Package Manager](https://docs.flutter.dev/packages-and-plugins/swift-package-manager/for-app-developers) for native iOS plugin compilation. SwiftPM support in Flutter is still not enabled by default — the Docker image enables it via `flutter config --enable-swift-package-manager`. If your project uses CocoaPods-only plugins, they may need SwiftPM support added.
+
 ## Limitations & Disclaimer
 
 - **Xcode 26.3 or earlier required.** Xcode 26.4+ ships SDK headers as stubs that require Apple's installer to reconstitute. This is not yet supported.
