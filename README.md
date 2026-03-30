@@ -24,6 +24,10 @@ The output `.ipa` is unsigned. Sign and install it with [MobAI](https://mobai.ru
 
 Swift, Flutter, and all build tooling are included in the image.
 
+## Docker images
+
+Pre-built images are available on [Docker Hub](https://hub.docker.com/r/mobaiapp/iosbox).
+
 ## Quick start
 
 ### 1. Download Xcode
