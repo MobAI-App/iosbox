@@ -26,7 +26,13 @@ Swift, Flutter, and all build tooling are included in the image.
 
 ## Docker images
 
-Pre-built images are available on [Docker Hub](https://hub.docker.com/r/mobaiapp/iosbox).
+Pre-built images are available on [Docker Hub](https://hub.docker.com/r/mobaiapp/iosbox):
+
+| Tag | Flutter |
+|-----|---------|
+| `mobaiapp/iosbox:flutter-3.38.5` | 3.38.5 |
+| `mobaiapp/iosbox:flutter-3.41.0` | 3.41.0 |
+| `mobaiapp/iosbox:flutter-3.41.6` | 3.41.6 |
 
 ## Quick start
 
@@ -44,7 +50,7 @@ Run this once to extract and register the iOS SDK into a named Docker volume:
 docker run --rm \
   -v /path/to/Xcode_26.3_Apple_silicon.xip:/workspace/Xcode.xip:/workspace/Xcode.xip \
   -v iosbox-sdk:/root/.iosbox \
-  mobaiapp/iosbox:latest \
+  mobaiapp/iosbox:flutter-3.41.0 \
   iosbox setup /workspace/Xcode.xip
 ```
 
@@ -53,20 +59,16 @@ The `iosbox-sdk` volume persists the extracted SDK — you won't need to repeat 
 ### 3. Build your Flutter app
 
 ```bash
-# Debug build (default)
 docker run --rm \
   -v iosbox-sdk:/root/.iosbox \
   -v /path/to/your-flutter-app:/project \
-  mobaiapp/iosbox:latest \
-  iosbox dev /project
-
-# Release build (AOT, optimized, tree-shaken)
-docker run --rm \
-  -v iosbox-sdk:/root/.iosbox \
-  -v /path/to/your-flutter-app:/project \
-  mobaiapp/iosbox:latest \
-  iosbox dev --release /project
+  -v iosbox-swift-cache-myapp:/root/.cache/org.swift.swiftpm \
+  -v iosbox-build-cache-myapp:/tmp/iosbox-native-build \
+  mobaiapp/iosbox:flutter-3.41.0 \
+  iosbox build /project
 ```
+
+The cache volumes (`iosbox-swift-cache-*`, `iosbox-build-cache-*`) persist SwiftPM packages and native build artifacts between runs, significantly speeding up subsequent builds.
 
 The `.ipa` is written to `/path/to/your-flutter-app/build/iosbox/Runner.ipa`.
 
@@ -111,6 +113,7 @@ iosbox uses [Swift Package Manager](https://docs.flutter.dev/packages-and-plugin
 
 ## Limitations & Disclaimer
 
+- **Debug builds only.** Release (AOT) builds are in progress.
 - **Xcode 26.3 or earlier required.** Xcode 26.4+ ships SDK headers as stubs that require Apple's installer to reconstitute. This is not yet supported.
 - Only physical devices are supported (`arm64-apple-ios`), no simulator.
 - The `.ipa` is unsigned. Use [MobAI](https://mobai.run) for signing, installation, and debugging.

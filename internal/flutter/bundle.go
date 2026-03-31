@@ -78,6 +78,33 @@ func assembleApp(ctx *buildContext) error {
 		})
 	}
 
+	// Copy bundle resources from ios/Runner/ (e.g. GoogleService-Info.plist, assets).
+	// Xcode does this via "Copy Bundle Resources"; we replicate it here.
+	runnerDir := filepath.Join(ctx.projectPath, "ios", "Runner")
+	if entries, err := os.ReadDir(runnerDir); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			// Skip source code, Info.plist (generated separately), and build dirs
+			if strings.HasSuffix(name, ".swift") || strings.HasSuffix(name, ".h") ||
+				strings.HasSuffix(name, ".m") || name == "Info.plist" ||
+				name == "Base.lproj" || name == "Assets.xcassets" {
+				continue
+			}
+			src := filepath.Join(runnerDir, name)
+			dst := filepath.Join(appDir, name)
+			info, _ := e.Info()
+			if info != nil && info.IsDir() {
+				if err := copyDir(src, dst); err != nil {
+					fmt.Printf("  warning: copy %s: %v\n", name, err)
+				}
+			} else {
+				if err := copyFile(src, dst); err != nil {
+					fmt.Printf("  warning: copy %s: %v\n", name, err)
+				}
+			}
+		}
+	}
+
 	infoPlist := generateInfoPlist(ctx)
 	if err := os.WriteFile(filepath.Join(appDir, "Info.plist"), []byte(infoPlist), 0o644); err != nil {
 		return fmt.Errorf("write Info.plist: %w", err)

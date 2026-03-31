@@ -30,11 +30,13 @@ run-setup:
 		$(IMAGE):$(TAG) \
 		iosbox setup /workspace/Xcode.xip
 
-# Build a Flutter project: make run-build PROJECT=/path/to/app [RELEASE=1]
+# Build a Flutter project: make run-build PROJECT=/path/to/app
 run-build:
 	docker run --rm --platform linux/amd64 \
 		-v iosbox-sdk:/root/.iosbox \
 		-v $(PROJECT):/project \
+		-v iosbox-swift-cache-$(notdir $(PROJECT)):/root/.cache/org.swift.swiftpm \
+		-v iosbox-build-cache-$(notdir $(PROJECT)):/tmp/iosbox-native-build \
 		$(IMAGE):$(TAG) \
 		iosbox build /project
 
