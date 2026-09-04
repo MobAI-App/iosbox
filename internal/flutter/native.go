@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/MobAI-App/iosbox/internal/sdk"
@@ -385,6 +386,12 @@ let package = Package(
 
 // The executable must not ask for an older iOS than the plugins it links, so
 // the project's own deployment target is the only honest source for it.
+//
+// The value is set in several places: the project-level configurations that
+// flutter create writes, and the Runner target's own configurations that Xcode
+// writes when the minimum is raised in its UI. The two can disagree, and the
+// file orders them by object ID, so the highest value is used rather than the
+// first one found.
 func deploymentTarget(iosDir string) string {
 	const fallback = "13.0"
 
@@ -392,11 +399,34 @@ func deploymentTarget(iosDir string) string {
 	if err != nil {
 		return fallback
 	}
-	found := regexp.MustCompile(`IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);`).FindSubmatch(read)
-	if found == nil {
+	highest := ""
+	for _, m := range regexp.MustCompile(`IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);`).FindAllSubmatch(read, -1) {
+		if v := string(m[1]); highest == "" || versionLess(highest, v) {
+			highest = v
+		}
+	}
+	if highest == "" {
 		return fallback
 	}
-	return string(found[1])
+	return highest
+}
+
+// versionLess reports whether dotted version a is lower than b, e.g. "13.0" < "14.0".
+func versionLess(a, b string) bool {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var x, y int
+		if i < len(as) {
+			x, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			y, _ = strconv.Atoi(bs[i])
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
 }
 
 func generatePackageSwiftWithPlugins(engineFrameworkDir string, plugins []pluginInfo, deployment string) string {
