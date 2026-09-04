@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/MobAI-App/iosbox/internal/sdk"
@@ -124,7 +126,12 @@ func generateBuilderPackage(ctx *buildContext, builderDir string) error {
 		return err
 	}
 
-	packageSwift := generatePackageSwiftWithPlugins(engineFrameworkDir, plugins)
+	plugins, err = vendFlutterFramework(ctx, builderDir, plugins)
+	if err != nil {
+		return fmt.Errorf("vend FlutterFramework: %w", err)
+	}
+
+	packageSwift := generatePackageSwiftWithPlugins(engineFrameworkDir, plugins, deploymentTarget(iosDir))
 
 	pkgPath := filepath.Join(builderDir, "Package.swift")
 	if err := os.WriteFile(pkgPath, []byte(packageSwift), 0o644); err != nil {
@@ -302,7 +309,127 @@ func findEngineSlice(xcframeworkDir string) string {
 	return ""
 }
 
-func generatePackageSwiftWithPlugins(engineFrameworkDir string, plugins []pluginInfo) string {
+// Plugins built against Flutter 3.42 and later declare a package dependency on
+// a local package named FlutterFramework, sitting beside their own package
+// directory. Flutter's own tool creates that package and rewrites each plugin
+// manifest to point at the one copy; a copy per plugin would collide, since
+// SwiftPM takes a package's identity from its directory name.
+//
+// The plugin is copied rather than edited in place, so the pub cache is left
+// exactly as pub wrote it.
+func vendFlutterFramework(ctx *buildContext, builderDir string, plugins []pluginInfo) ([]pluginInfo, error) {
+	const dependency = `path: "../FlutterFramework"`
+
+	shared := filepath.Join(builderDir, "FlutterFramework")
+	vended := false
+
+	for i, p := range plugins {
+		manifest := filepath.Join(p.PkgDir, "Package.swift")
+		read, err := os.ReadFile(manifest)
+		if err != nil || !strings.Contains(string(read), dependency) {
+			continue
+		}
+		if !vended {
+			if err := writeFlutterFrameworkPackage(shared, ctx.engineDir); err != nil {
+				return nil, err
+			}
+			vended = true
+		}
+		copied := filepath.Join(builderDir, "SourcePackages", p.Name)
+		if err := os.RemoveAll(copied); err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Dir(copied), 0o755); err != nil {
+			return nil, err
+		}
+		if err := copyDir(p.PkgDir, copied); err != nil {
+			return nil, fmt.Errorf("copy %s: %w", p.Name, err)
+		}
+		pointed := strings.ReplaceAll(
+			string(read),
+			dependency,
+			fmt.Sprintf("path: %q", shared),
+		)
+		if err := os.WriteFile(filepath.Join(copied, "Package.swift"), []byte(pointed), 0o644); err != nil {
+			return nil, err
+		}
+		plugins[i].PkgDir = copied
+	}
+	return plugins, nil
+}
+
+func writeFlutterFrameworkPackage(dir, engineDir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	link := filepath.Join(dir, "Flutter.xcframework")
+	if err := os.RemoveAll(link); err != nil {
+		return err
+	}
+	if err := os.Symlink(engineDir, link); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "Package.swift"), []byte(`// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "FlutterFramework",
+    products: [
+        .library(name: "FlutterFramework", targets: ["FlutterFramework"])
+    ],
+    targets: [
+        .binaryTarget(name: "FlutterFramework", path: "Flutter.xcframework")
+    ]
+)
+`), 0o644)
+}
+
+// The executable must not ask for an older iOS than the plugins it links, so
+// the project's own deployment target is the only honest source for it.
+//
+// The value is set in several places: the project-level configurations that
+// flutter create writes, and the Runner target's own configurations that Xcode
+// writes when the minimum is raised in its UI. The two can disagree, and the
+// file orders them by object ID, so the highest value is used rather than the
+// first one found.
+func deploymentTarget(iosDir string) string {
+	const fallback = "13.0"
+
+	read, err := os.ReadFile(filepath.Join(iosDir, "Runner.xcodeproj", "project.pbxproj"))
+	if err != nil {
+		return fallback
+	}
+	highest := ""
+	for _, m := range regexp.MustCompile(`IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);`).FindAllSubmatch(read, -1) {
+		if v := string(m[1]); highest == "" || versionLess(highest, v) {
+			highest = v
+		}
+	}
+	if highest == "" {
+		return fallback
+	}
+	return highest
+}
+
+// versionLess reports whether dotted version a is lower than b, e.g. "13.0" < "14.0".
+func versionLess(a, b string) bool {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var x, y int
+		if i < len(as) {
+			x, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			y, _ = strconv.Atoi(bs[i])
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
+}
+
+func generatePackageSwiftWithPlugins(engineFrameworkDir string, plugins []pluginInfo, deployment string) string {
 	var deps, targetDeps strings.Builder
 
 	for _, p := range plugins {
@@ -330,7 +457,7 @@ import PackageDescription
 
 let package = Package(
     name: "Runner",
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS("%s")],
     dependencies: [
 %s    ],
     targets: [
@@ -342,7 +469,7 @@ let package = Package(
         ),
     ]
 )
-`, deps.String(), targetDeps.String(), swiftSettings, linkerFlags)
+`, deployment, deps.String(), targetDeps.String(), swiftSettings, linkerFlags)
 }
 
 func readSwiftPMProductName(pkgDir, pluginName string) string {
